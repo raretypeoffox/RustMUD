@@ -166,5 +166,32 @@ Press <enter> to continue...
       BorderlandSentinel,
       WanderingBard,
     }
+
+  #[derive(PartialEq, Copy, Clone)]  
+  pub enum Position {
+    Stand,
+    Rest,
+    Sleep,
+    Fight,
+  }
+
+  #[derive(Eq, Hash, PartialEq, Copy, Clone)]
+  pub enum EquipSlot {
+    Light,
+    Finger,
+    Neck,
+    Body,
+    Head,
+    Legs,
+    Feet,
+    Hands,
+    Arms,
+    Offhand,
+    About,
+    Waist,
+    Wrist,
+    Wield,
+    Held,
+  }
 }
 
