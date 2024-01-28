@@ -1,19 +1,20 @@
 // main.rs
 #![allow(dead_code)]
 
-use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::net::TcpListener;
 use std::io::{self, Read, Write};
-use std::collections::HashMap;
+
 
 mod handler; 
 mod consts;
 mod login;
 mod db;
+mod player;
 
 use handler::process_player_input;
 use login::process_player_login; 
-use consts::constants::{Conn, Sex, Race, Origin, GREETING}; 
-
+use consts::constants::{Conn, Sex, Race, Origin}; 
+use player::{Player, PlayerManager};
 
 fn main() -> io::Result<()> {
     // Bind the server to a local port
@@ -114,99 +115,3 @@ fn main() -> io::Result<()> {
         // Update game state
     }
 }
-
-struct Player {
-    addr: SocketAddr,
-    stream: TcpStream,
-    input_buffer: Vec<u8>,
-    output_buffer: Vec<u8>,
-    connection_status: Conn,
-
-    character_name: String,
-    sex: Sex,
-    race: Race,
-    origin: Origin,
-}
-
-impl Player {
-    // Other methods...
-
-    fn append_to_input_buffer(&mut self, data: &[u8]) {
-        self.input_buffer.extend_from_slice(data);
-    }
-
-    fn append_to_output_buffer(&mut self, data: String) {
-        self.output_buffer.extend_from_slice(data.as_bytes());
-    }
-
-    fn read_input_buffer(&mut self) -> String {
-        let mut input_buffer = Vec::new();
-        std::mem::swap(&mut input_buffer, &mut self.input_buffer);
-        String::from_utf8_lossy(&input_buffer).to_string()
-    }
-}
-
-struct PlayerManager {
-    players: HashMap<usize, Player>,
-    unique_id_counter: usize,
-}
-
-impl PlayerManager {
-    fn new() -> PlayerManager {
-        PlayerManager {
-            players: HashMap::new(),
-            unique_id_counter: 1,
-        }
-    }
-
-    fn add_player(&mut self, addr: SocketAddr, stream: TcpStream) -> usize {
-        let id = self.unique_id_counter;
-        self.unique_id_counter += 1;
-    
-        let mut player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new(), connection_status: Conn::GetName, character_name: String::new(), sex: Sex::None, race: Race::None, origin: Origin::None};
-    
-        // Append the greeting message to the output buffer
-        let greeting_message = format!("{}\nWhat is your name?\n", GREETING);
-        player.append_to_output_buffer(greeting_message);
-    
-        self.players.insert(id, player);
-    
-        id
-    }
-
-    fn remove_player(&mut self, id: usize) {
-        self.players.remove(&id);
-    }
-
-    fn get_connection_status(&self, id: usize) -> Conn {
-        let player = self.players.get(&id).unwrap();
-        player.connection_status
-    }
-
-    fn is_player_online(&self, character_name: &str) -> bool {
-        for player in self.players.values() {
-            if player.character_name.to_lowercase() == character_name.to_lowercase() {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn read_player_input(&mut self, id: usize) -> String {
-        let player = self.players.get_mut(&id).unwrap();
-        player.read_input_buffer()
-    }
-
-    fn send_message(&mut self, id: usize, message: String) {
-        let player = self.players.get_mut(&id).unwrap();
-        player.append_to_output_buffer(message + "\n");
-    }
-
-    fn send_global_message(&mut self, message: String) {
-        for player in self.players.values_mut() {
-            player.append_to_output_buffer(message.clone() + "\n");
-        }
-    }
-}
-
- 
