@@ -1,40 +1,73 @@
 // handler.rs
 
-use tokio::sync::Mutex;
-use std::sync::Arc;
-use super::PlayerManager; // Assuming PlayerManager is defined in the parent module
 use std::io;
+use super::PlayerManager;
 
-
-// pub async fn process_player_input(input: &[u8], player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) -> io::Result<()> {
-//     println!("Handling player input: {}", String::from_utf8_lossy(input));
-
-//     println!("Attempting to lock player_manager in process_player_output");
-//     let mut player_manager = player_manager.lock().await;
-//     println!("PlayerManager locked in process_player_output");
-//     if let Some(player) = player_manager.players.get_mut(&player_id) {
-//         println!("Appending to player's output_buffer");
-//         player.append_to_output_buffer(input);
-//     }
-
-//     Ok(())
-// }
-
-pub async fn process_player_input(input: &[u8], player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) -> io::Result<()> {
-    println!("Handling player input: {}", String::from_utf8_lossy(input));
-
-    // Broadcast the player's input to all players
-    broadcast_message(input, player_manager.clone()).await?;
-
-    Ok(())
+enum Command {
+    Chat,
+    North,
+    Echo,
+    // Add other commands here...
 }
 
-pub async fn broadcast_message(message: &[u8], player_manager: Arc<Mutex<PlayerManager>>) -> io::Result<()> {
-    let mut player_manager = player_manager.lock().await;
-    for player in player_manager.players.values_mut() {
-        println!("Appending to player's output_buffer");
-        player.append_to_output_buffer(message);
+fn string_to_command(s: &str) -> Option<Command> {
+    match s {
+        "n" => Some(Command::North),
+        _ => {
+            if s.len() > 1 {
+                if "north".starts_with(s) {
+                    Some(Command::North)
+                } else if "chat".starts_with(s) {
+                    Some(Command::Chat)
+                } else if "echo".starts_with(s) {
+                    Some(Command::Echo)
+                }
+                // Add other string-command mappings here...
+                else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    }
+}
 
+fn chat_command(player_manager: &mut PlayerManager, _player_id: usize, argument: &str) {
+    player_manager.send_global_message(argument.to_string());
+}
+
+fn echo_command(player_manager: &mut PlayerManager, player_id: usize, argument: &str) {
+    player_manager.send_message(player_id, format!("You said: {}", argument));
+}
+
+
+fn north_command(_player_manager: &mut PlayerManager, _player_id: usize, _argument: &str) {
+    // Implement the north command here...
+}
+
+
+fn parse_input(input: &str) -> (Option<Command>, String) {
+    let mut words = input.split_whitespace();
+    let command = words.next().map(|s| string_to_command(&s.to_lowercase())).flatten();
+    let argument = words.collect::<Vec<&str>>().join(" ");
+    (command, argument)
+}
+
+pub fn process_player_input(player_manager: &mut PlayerManager, player_id: usize,) -> io::Result<()> {
+
+    let input = player_manager.read_player_input(player_id);
+
+    println!("Handling player input: {}", input);
+
+    let (command, argument) = parse_input(&input);
+
+    match command {
+        Some(Command::Chat) => chat_command(player_manager, player_id, &argument),
+        Some(Command::North) => north_command(player_manager, player_id, &argument),
+        Some(Command::Echo) => echo_command(player_manager, player_id, &argument),
+        // Add other command matches here...
+        None => player_manager.send_message(player_id, "I don't understand that command.".to_string()),
     }
 
     Ok(())

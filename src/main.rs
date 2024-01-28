@@ -1,154 +1,130 @@
 // main.rs
 
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::sync::Mutex;
+use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::io::{self, Read, Write};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::time::Duration;
 
 mod handler; // Include the handler module
 
 use handler::process_player_input; // Import the handle_player_input function
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
-    let player_manager = Arc::new(Mutex::new(PlayerManager::new()));
 
-    let manager_clone = player_manager.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-            update_game_state(&manager_clone);
-        }
-    });
+fn main() -> io::Result<()> {
+    // Bind the server to a local port
+    let listener = TcpListener::bind("127.0.0.1:8080")?;
+    listener.set_nonblocking(true)?;
+
+    let mut data_buf = [0; 512];
+
+    let mut player_manager = PlayerManager::new();
 
     loop {
-        let (socket, _) = listener.accept().await?;
-
-        // Split the socket into a read half and a write half
-        let (socket_reader, socket_writer) = socket.into_split();
-
-        // Wrap the halves in Arc<Mutex<>> so they can be shared safely
-        let socket_reader = Arc::new(Mutex::new(socket_reader));
-        let socket_writer = Arc::new(Mutex::new(socket_writer));
-
-        let player_manager_clone = player_manager.clone();
-
-        let player_id = {
-            let mut player_manager = player_manager_clone.lock().await;
-            player_manager.add_player()
-        };
-
-        // Spawn the input handling task
-        let socket_reader_clone = Arc::clone(&socket_reader);
-        let player_manager_clone = player_manager.clone();
-        tokio::spawn(async move {
-            handle_player_input(socket_reader_clone, player_id, player_manager_clone).await;
-        });
-
-        // Spawn the output handling task
-        let socket_writer_clone = Arc::clone(&socket_writer);
-        let player_manager_clone = player_manager.clone();
-        tokio::spawn(async move {
-            handle_player_output(socket_writer_clone, player_id, player_manager_clone).await;
-        });
-    }
-}
-
-fn update_game_state(player_manager: &Arc<Mutex<PlayerManager>>) {
-    let mut player_manager = player_manager.lock();
-    // ... existing code ...
-}
-
-async fn handle_disconnection(player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
-    println!("Client disconnected");
-    let mut player_manager = player_manager.lock().await;
-    //player_manager.players.remove(&player_id);
-    player_manager.remove_player(player_id);
-}
-
-async fn handle_player_input(socket_reader: Arc<Mutex<OwnedReadHalf>>, player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
-    let mut buffer = [0; 1024];
-    loop {
-        let mut socket_reader = socket_reader.lock().await;
-        match socket_reader.read(&mut buffer).await {
-            Ok(0) => {
-                handle_disconnection(player_id, player_manager.clone()).await;
-                return;
+        // Accept new connections and add them to the client list
+        match listener.accept() {
+            Ok((stream, addr)) => {
+                println!("New client: {}", addr);
+                stream.set_nonblocking(true)?;
+                player_manager.add_player(addr, stream);
             }
-            Ok(bytes_read) => {
-                let message = buffer[..bytes_read].to_vec();
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                // No incoming connection yet
+            }
+            Err(e) => panic!("encountered IO error: {}", e),
+        }
 
-                // Process the player's input
-                if let Err(e) = process_player_input(&message, player_id, player_manager.clone()).await {
-                    eprintln!("Failed to process player input: {}", e);
-                    return;
+        let mut players_input_to_process = Vec::new();
+        let mut disconnected_players = Vec::new();
+
+        // Read incoming data from clients
+        for (id, player) in player_manager.players.iter_mut() {
+            match player.stream.read(&mut data_buf) {
+                Ok(0) => {
+                    // Connection was closed
+                    println!("Client {} disconnected", player.addr);
+                    disconnected_players.push(*id);
+                }
+                Ok(len) => {
+                    //println!("Received data from {}: {:?}", player.addr, &data_buf[..len]);
+                    player.append_to_input_buffer(&data_buf[..len]);
+                    players_input_to_process.push(*id);
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    // No data received yet
+                }
+                Err(e) => {
+                    println!("Failed to receive data from {}: {}", player.addr, e);
                 }
             }
-            Err(e) => {
-                eprintln!("Failed to read from socket: {}", e);
-                return;
-            }
         }
 
-        // Add a delay to prevent the loop from running too fast
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    }
-}
+        // Handle disconnections
+        for id in disconnected_players {
+            player_manager.remove_player(id);
+        }
 
-async fn handle_player_output(socket_writer: Arc<Mutex<OwnedWriteHalf>>, player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
-    loop {
-        let player_manager_clone = player_manager.clone();
-        println!("Attempting to lock player_manager in handle_player_output");
-        let mut player_manager = player_manager.lock().await;
-        println!("PlayerManager locked in handle_player_output");
-        if let Some(player) = player_manager.players.get_mut(&player_id) {
+        // Process input from clients
+        for id in players_input_to_process {
+            match process_player_input(&mut player_manager, id) {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("Failed to process input from player {}: {}", id, e);
+                }
+            }
+        }
+        
+        // Process output to clients
+        for player in player_manager.players.values_mut() {
             if !player.output_buffer.is_empty() {
-                println!("Writing to socket: {}", String::from_utf8_lossy(&player.output_buffer));
-                let mut socket_writer = socket_writer.lock().await;
-                match socket_writer.write_all(&player.output_buffer).await {
+
+                // if logged in, append prompt
+                player.append_to_output_buffer("\n<HP Ma XP>\n".to_string());
+
+                match player.stream.write_all(&player.output_buffer) {
                     Ok(_) => {
-                        // Flush the socket
-                        if let Err(e) = socket_writer.flush().await {
-                            eprintln!("Failed to flush socket: {}", e);
-                            handle_disconnection(player_id, player_manager_clone).await;
-                            return;
+                        player.output_buffer.clear();
+                        if let Err(e) = player.stream.flush() {
+                            println!("Failed to flush data to {}: {}", player.addr, e);
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to write to socket: {}", e);
-                        handle_disconnection(player_id, player_manager_clone).await;
-                        return;
+                        println!("Failed to send data to {}: {}", player.addr, e);
                     }
                 }
-
-                // Clear the output buffer
-                player.output_buffer.clear();
-                println!("Releasing socket lock in handle_player_output");
             }
-        } else {
-            // Player not found in player_manager, possibly already removed due to disconnection
-            return;
         }
 
-        // Add a delay to prevent the loop from running too fast
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        println!("Releasing PlayerManager lock in handle_player_output");
+
+        // Update game state
+
+        // Sleep a bit to prevent 100% CPU usage loop
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
 struct Player {
     // Player attributes here.
+    addr: SocketAddr,
+    stream: TcpStream,
+    input_buffer: Vec<u8>,
     output_buffer: Vec<u8>,
 }
 
 impl Player {
     // Other methods...
 
-    fn append_to_output_buffer(&mut self, data: &[u8]) {
-        self.output_buffer.extend_from_slice(data);
+    fn append_to_input_buffer(&mut self, data: &[u8]) {
+        self.input_buffer.extend_from_slice(data);
+    }
+
+    fn append_to_output_buffer(&mut self, data: String) {
+        self.output_buffer.extend_from_slice(data.as_bytes());
+    }
+
+    fn read_input_buffer(&mut self) -> String {
+        let mut input_buffer = Vec::new();
+        std::mem::swap(&mut input_buffer, &mut self.input_buffer);
+        String::from_utf8_lossy(&input_buffer).to_string()
     }
 }
 
@@ -165,11 +141,11 @@ impl PlayerManager {
         }
     }
 
-    fn add_player(&mut self) -> usize {
+    fn add_player(&mut self, addr: SocketAddr, stream: TcpStream) -> usize {
         let id = self.unique_id_counter;
         self.unique_id_counter += 1;
 
-        let player = Player { output_buffer: Vec::new() };
+        let player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new() };
         self.players.insert(id, player);
 
         id
@@ -179,5 +155,21 @@ impl PlayerManager {
         self.players.remove(&id);
     }
 
-    // Implement other methods to manage players, such as broadcast_message, etc.
+    fn read_player_input(&mut self, id: usize) -> String {
+        let player = self.players.get_mut(&id).unwrap();
+        player.read_input_buffer()
+    }
+
+    fn send_message(&mut self, id: usize, message: String) {
+        let player = self.players.get_mut(&id).unwrap();
+        player.append_to_output_buffer(message + "\n");
+    }
+
+    fn send_global_message(&mut self, message: String) {
+        for player in self.players.values_mut() {
+            player.append_to_output_buffer(message.clone() + "\n");
+        }
+    }
 }
+
+ 
