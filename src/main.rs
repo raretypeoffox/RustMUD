@@ -4,10 +4,11 @@ use std::net::{TcpListener, TcpStream, SocketAddr};
 use std::io::{self, Read, Write};
 use std::collections::HashMap;
 
-mod handler; // Include the handler module
+mod handler; 
+mod consts;
 
 use handler::process_player_input; // Import the handle_player_input function
-
+use consts::constants;
 
 fn main() -> io::Result<()> {
     // Bind the server to a local port
@@ -77,7 +78,9 @@ fn main() -> io::Result<()> {
             if !player.output_buffer.is_empty() {
 
                 // if logged in, append prompt
-                player.append_to_output_buffer("\n<HP Ma XP>\n".to_string());
+                if player.connection_status == constants::CON_PLAYING {
+                    player.append_to_output_buffer("\n<HP Ma XP>\n".to_string());
+                }
 
                 match player.stream.write_all(&player.output_buffer) {
                     Ok(_) => {
@@ -103,6 +106,7 @@ struct Player {
     stream: TcpStream,
     input_buffer: Vec<u8>,
     output_buffer: Vec<u8>,
+    connection_status: u8,
 }
 
 impl Player {
@@ -139,10 +143,15 @@ impl PlayerManager {
     fn add_player(&mut self, addr: SocketAddr, stream: TcpStream) -> usize {
         let id = self.unique_id_counter;
         self.unique_id_counter += 1;
-
-        let player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new() };
+    
+        let mut player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new(), connection_status: constants::CON_GET_NAME};
+    
+        // Append the greeting message to the output buffer
+        let greeting_message = format!("{}\nWhat is your name?\n", constants::GREETING);
+        player.append_to_output_buffer(greeting_message);
+    
         self.players.insert(id, player);
-
+    
         id
     }
 
