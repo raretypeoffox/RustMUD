@@ -1,12 +1,11 @@
 // main.rs
 
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
-use futures::FutureExt;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::io::Write; 
 
 mod handler; // Include the handler module
 
@@ -20,15 +19,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manager_clone = player_manager.clone();
     tokio::spawn(async move {
         loop {
-            //tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
             update_game_state(&manager_clone);
         }
     });
 
     loop {
         let (socket, _) = listener.accept().await?;
-        let socket = Arc::new(Mutex::new(socket));  // Wrap the TcpStream in an Arc<Mutex<_>>.
+
+        // Split the socket into a read half and a write half
+        let (socket_reader, socket_writer) = socket.into_split();
+
+        // Wrap the halves in Arc<Mutex<>> so they can be shared safely
+        let socket_reader = Arc::new(Mutex::new(socket_reader));
+        let socket_writer = Arc::new(Mutex::new(socket_writer));
+
         let player_manager_clone = player_manager.clone();
 
         let player_id = {
@@ -36,34 +41,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             player_manager.add_player()
         };
 
-        let socket_clone = Arc::clone(&socket);  // Clone the Arc<Mutex<TcpStream>> for the new task.
-
-        tokio::spawn(async move {
-            handle_player_input(socket_clone, player_id, player_manager_clone).await;
-        });
-        
-        let socket_clone = Arc::clone(&socket);  // Clone the Arc<Mutex<TcpStream>> for the new task.
+        // Spawn the input handling task
+        let socket_reader_clone = Arc::clone(&socket_reader);
         let player_manager_clone = player_manager.clone();
-        
         tokio::spawn(async move {
-            handle_player_output(socket_clone, player_id, player_manager_clone).await;
+            handle_player_input(socket_reader_clone, player_id, player_manager_clone).await;
+        });
+
+        // Spawn the output handling task
+        let socket_writer_clone = Arc::clone(&socket_writer);
+        let player_manager_clone = player_manager.clone();
+        tokio::spawn(async move {
+            handle_player_output(socket_writer_clone, player_id, player_manager_clone).await;
         });
     }
 }
 
 fn update_game_state(player_manager: &Arc<Mutex<PlayerManager>>) {
     let mut player_manager = player_manager.lock();
-    // Update game state here.
+    // ... existing code ...
 }
 
-async fn handle_player_input(socket: Arc<Mutex<TcpStream>>, player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
+async fn handle_disconnection(player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
+    println!("Client disconnected");
+    let mut player_manager = player_manager.lock().await;
+    //player_manager.players.remove(&player_id);
+    player_manager.remove_player(player_id);
+}
+
+async fn handle_player_input(socket_reader: Arc<Mutex<OwnedReadHalf>>, player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
     let mut buffer = [0; 1024];
     loop {
-        let mut socket = socket.lock().await;
-        match socket.read(&mut buffer).await {
+        let mut socket_reader = socket_reader.lock().await;
+        match socket_reader.read(&mut buffer).await {
             Ok(0) => {
-                // The client has closed the connection
-                println!("Client disconnected");
+                handle_disconnection(player_id, player_manager.clone()).await;
                 return;
             }
             Ok(bytes_read) => {
@@ -82,36 +94,48 @@ async fn handle_player_input(socket: Arc<Mutex<TcpStream>>, player_id: usize, pl
         }
 
         // Add a delay to prevent the loop from running too fast
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     }
 }
 
-async fn handle_player_output(socket: Arc<Mutex<TcpStream>>, player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
+async fn handle_player_output(socket_writer: Arc<Mutex<OwnedWriteHalf>>, player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
     loop {
+        let player_manager_clone = player_manager.clone();
+        println!("Attempting to lock player_manager in handle_player_output");
         let mut player_manager = player_manager.lock().await;
+        println!("PlayerManager locked in handle_player_output");
         if let Some(player) = player_manager.players.get_mut(&player_id) {
             if !player.output_buffer.is_empty() {
-                println!("Writing to socket...");
-                let mut socket = socket.lock().await;
-                if let Err(e) = socket.write_all(&player.output_buffer).await {
-                    eprintln!("Failed to write to socket: {}", e);
-                    return;
-                }
-
-                // Flush the socket
-                println!("Flushing socket...");
-                if let Err(e) = socket.flush().await {
-                    eprintln!("Failed to flush socket: {}", e);
-                    return;
+                println!("Writing to socket: {}", String::from_utf8_lossy(&player.output_buffer));
+                let mut socket_writer = socket_writer.lock().await;
+                match socket_writer.write_all(&player.output_buffer).await {
+                    Ok(_) => {
+                        // Flush the socket
+                        if let Err(e) = socket_writer.flush().await {
+                            eprintln!("Failed to flush socket: {}", e);
+                            handle_disconnection(player_id, player_manager_clone).await;
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to write to socket: {}", e);
+                        handle_disconnection(player_id, player_manager_clone).await;
+                        return;
+                    }
                 }
 
                 // Clear the output buffer
                 player.output_buffer.clear();
+                println!("Releasing socket lock in handle_player_output");
             }
+        } else {
+            // Player not found in player_manager, possibly already removed due to disconnection
+            return;
         }
 
         // Add a delay to prevent the loop from running too fast
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        println!("Releasing PlayerManager lock in handle_player_output");
     }
 }
 
