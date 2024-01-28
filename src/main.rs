@@ -183,6 +183,15 @@ impl PlayerManager {
         player.connection_status
     }
 
+    fn is_player_online(&self, character_name: &str) -> bool {
+        for player in self.players.values() {
+            if player.character_name.to_lowercase() == character_name.to_lowercase() {
+                return true;
+            }
+        }
+        false
+    }
+
     fn read_player_input(&mut self, id: usize) -> String {
         let player = self.players.get_mut(&id).unwrap();
         player.read_input_buffer()
