@@ -1,114 +1,74 @@
 // handler.rs
 
-use std::pin::Pin;
-use std::future::Future;
-use tokio::sync::Mutex;
-use std::sync::Arc;
 use std::io;
-use std::collections::HashMap;
 use super::PlayerManager;
 
-type CommandFn = Arc<dyn Fn(String, Arc<Mutex<PlayerManager>>, usize) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send>> + Send + Sync>;
-
-struct CommandHandler {
-    commands: HashMap<String, CommandFn>,
+enum Command {
+    Chat,
+    North,
+    Echo,
+    // Add other commands here...
 }
 
-impl CommandHandler {
-    fn new() -> Self {
-        let mut commands = HashMap::new();
-        Self { commands }
-    }
-
-    fn add_command<F, Fut>(&mut self, name: String, function: F) 
-    where
-        F: Fn(String, Arc<Mutex<PlayerManager>>, usize) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = io::Result<()>> + Send + 'static,
-    {
-        let function = move |argument, player_manager, player_id| {
-            let future: Pin<Box<dyn Future<Output = io::Result<()>> + Send>> = Box::pin(function(argument, player_manager, player_id));
-            future
-        };
-        self.commands.insert(name, Arc::new(function) as CommandFn);
-    }
-
-    async fn execute_command(&self, command: String, argument: String, player_manager: Arc<Mutex<PlayerManager>>, player_id: usize) -> io::Result<()> {
-        if let Some(command_fn) = self.commands.get(&command) {
-            (command_fn)(argument, player_manager, player_id).await?;
-        } else {
-            send_message_to_player(player_manager, player_id, "Unknown command\n").await?;
+fn string_to_command(s: &str) -> Option<Command> {
+    match s {
+        "n" => Some(Command::North),
+        _ => {
+            if s.len() > 1 {
+                if "north".starts_with(s) {
+                    Some(Command::North)
+                } else if "chat".starts_with(s) {
+                    Some(Command::Chat)
+                } else if "echo".starts_with(s) {
+                    Some(Command::Echo)
+                }
+                // Add other string-command mappings here...
+                else {
+                    None
+                }
+            } else {
+                None
+            }
         }
-        Ok(())
     }
 }
 
-async fn send_message_to_player(player_manager: Arc<Mutex<PlayerManager>>, player_id: usize, message: &str) -> io::Result<()> {
-    let mut player_manager = player_manager.lock().await;
-    if let Some(player) = player_manager.players.get_mut(&player_id) {
-        player.append_to_output_buffer(message.as_bytes());
-    }
-    Ok(())
+fn chat_command(player_manager: &mut PlayerManager, _player_id: usize, argument: &str) {
+    player_manager.send_global_message(argument.to_string());
 }
 
-fn parse_input(input: &str) -> (String, String) {
+fn echo_command(player_manager: &mut PlayerManager, player_id: usize, argument: &str) {
+    player_manager.send_message(player_id, format!("You said: {}", argument));
+}
+
+
+fn north_command(_player_manager: &mut PlayerManager, _player_id: usize, _argument: &str) {
+    // Implement the north command here...
+}
+
+
+fn parse_input(input: &str) -> (Option<Command>, String) {
     let mut words = input.split_whitespace();
-    let command = words.next().unwrap_or("").to_lowercase();
+    let command = words.next().map(|s| string_to_command(&s.to_lowercase())).flatten();
     let argument = words.collect::<Vec<&str>>().join(" ");
     (command, argument)
 }
 
-pub async fn process_player_input(input: &[u8], player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) -> io::Result<()> {
-    let input = String::from_utf8_lossy(input);
+pub fn process_player_input(player_manager: &mut PlayerManager, player_id: usize,) -> io::Result<()> {
+
+    let input = player_manager.read_player_input(player_id);
+
     println!("Handling player input: {}", input);
 
     let (command, argument) = parse_input(&input);
 
-    let mut command_handler = CommandHandler::new();
-    command_handler.add_command("chat".to_string(), chat_command);
-
-    command_handler.execute_command(command, argument, player_manager.clone(), player_id).await?;
-
-    Ok(())
-}
-
-async fn chat_command(argument: String, player_manager: Arc<Mutex<PlayerManager>>, player_id: usize) -> io::Result<()> {
-    println!("Executing chat command with argument: {}", argument);
-    let mut player_manager = player_manager.lock().await;
-    if let Some(player) = player_manager.players.get_mut(&player_id) {
-        player.append_to_output_buffer(format!("{}\n", argument).as_bytes());
+    match command {
+        Some(Command::Chat) => chat_command(player_manager, player_id, &argument),
+        Some(Command::North) => north_command(player_manager, player_id, &argument),
+        Some(Command::Echo) => echo_command(player_manager, player_id, &argument),
+        // Add other command matches here...
+        None => player_manager.send_message(player_id, "I don't understand that command.".to_string()),
     }
+
     Ok(())
 }
-
-
-// pub async fn process_player_input(input: &[u8], player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) -> io::Result<()> {
-//     println!("Handling player input: {}", String::from_utf8_lossy(input));
-
-//     let mut player_manager = player_manager.lock().await;;
-//     if let Some(player) = player_manager.players.get_mut(&player_id) {
-//         println!("Appending to player's output_buffer");
-//         player.append_to_output_buffer(input);
-//     }
-
-//     Ok(())
-// }
-
-// pub async fn process_player_input(input: &[u8], player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) -> io::Result<()> {
-//     println!("Handling player input: {}", String::from_utf8_lossy(input));
-
-//     // Broadcast the player's input to all players
-//     broadcast_message(input, player_manager.clone()).await?;
-
-//     Ok(())
-// }
-
-// pub async fn broadcast_message(message: &[u8], player_manager: Arc<Mutex<PlayerManager>>) -> io::Result<()> {
-//     let mut player_manager = player_manager.lock().await;
-//     for player in player_manager.players.values_mut() {
-//         println!("Appending to player's output_buffer");
-//         player.append_to_output_buffer(message);
-
-//     }
-
-//     Ok(())
-// }
