@@ -6,9 +6,12 @@ use std::collections::HashMap;
 
 mod handler; 
 mod consts;
+mod login;
 
-use handler::process_player_input; // Import the handle_player_input function
-use consts::constants;
+use handler::process_player_input;
+use login::process_player_login; 
+use consts::constants::{Conn, Race, Origin, GREETING}; 
+
 
 fn main() -> io::Result<()> {
     // Bind the server to a local port
@@ -65,10 +68,19 @@ fn main() -> io::Result<()> {
 
         // Process input from clients
         for id in players_input_to_process {
-            match process_player_input(&mut player_manager, id) {
-                Ok(_) => {},
-                Err(e) => {
-                    println!("Failed to process input from player {}: {}", id, e);
+            if player_manager.get_connection_status(id) == Conn::Playing {
+                match process_player_input(&mut player_manager, id) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        println!("Failed to process input from player {}: {}", id, e);
+                    }
+                }
+            } else {
+                match process_player_login(&mut player_manager, id) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        println!("Failed to process input from player {}: {}", id, e);
+                    }
                 }
             }
         }
@@ -78,7 +90,7 @@ fn main() -> io::Result<()> {
             if !player.output_buffer.is_empty() {
 
                 // if logged in, append prompt
-                if player.connection_status == constants::CON_PLAYING {
+                if player.connection_status == Conn::Playing {
                     player.append_to_output_buffer("\n<HP Ma XP>\n".to_string());
                 }
 
@@ -106,7 +118,11 @@ struct Player {
     stream: TcpStream,
     input_buffer: Vec<u8>,
     output_buffer: Vec<u8>,
-    connection_status: u8,
+    connection_status: Conn,
+
+    character_name: Vec<u8>,
+    race: Race,
+    origin: Origin,
 }
 
 impl Player {
@@ -144,10 +160,10 @@ impl PlayerManager {
         let id = self.unique_id_counter;
         self.unique_id_counter += 1;
     
-        let mut player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new(), connection_status: constants::CON_GET_NAME};
+        let mut player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new(), connection_status: Conn::GetName, character_name: Vec::new(), race: Race::None, origin: Origin::None};
     
         // Append the greeting message to the output buffer
-        let greeting_message = format!("{}\nWhat is your name?\n", constants::GREETING);
+        let greeting_message = format!("{}\nWhat is your name?\n", GREETING);
         player.append_to_output_buffer(greeting_message);
     
         self.players.insert(id, player);
@@ -157,6 +173,11 @@ impl PlayerManager {
 
     fn remove_player(&mut self, id: usize) {
         self.players.remove(&id);
+    }
+
+    fn get_connection_status(&self, id: usize) -> Conn {
+        let player = self.players.get(&id).unwrap();
+        player.connection_status
     }
 
     fn read_player_input(&mut self, id: usize) -> String {
