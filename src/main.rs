@@ -57,8 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn update_game_state(player_manager: &Arc<Mutex<PlayerManager>>) {
-    let mut player_manager = player_manager.lock();
+fn update_game_state(_player_manager: &Arc<Mutex<PlayerManager>>) {
+    //let mut player_manager = player_manager.lock();
     // ... existing code ...
 }
 
@@ -101,9 +101,7 @@ async fn handle_player_input(socket_reader: Arc<Mutex<OwnedReadHalf>>, player_id
 async fn handle_player_output(socket_writer: Arc<Mutex<OwnedWriteHalf>>, player_id: usize, player_manager: Arc<Mutex<PlayerManager>>) {
     loop {
         let player_manager_clone = player_manager.clone();
-        println!("Attempting to lock player_manager in handle_player_output");
         let mut player_manager = player_manager.lock().await;
-        println!("PlayerManager locked in handle_player_output");
         if let Some(player) = player_manager.players.get_mut(&player_id) {
             if !player.output_buffer.is_empty() {
                 println!("Writing to socket: {}", String::from_utf8_lossy(&player.output_buffer));
@@ -126,7 +124,6 @@ async fn handle_player_output(socket_writer: Arc<Mutex<OwnedWriteHalf>>, player_
 
                 // Clear the output buffer
                 player.output_buffer.clear();
-                println!("Releasing socket lock in handle_player_output");
             }
         } else {
             // Player not found in player_manager, possibly already removed due to disconnection
@@ -135,10 +132,10 @@ async fn handle_player_output(socket_writer: Arc<Mutex<OwnedWriteHalf>>, player_
 
         // Add a delay to prevent the loop from running too fast
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        println!("Releasing PlayerManager lock in handle_player_output");
     }
 }
 
+#[derive(Clone)]
 struct Player {
     // Player attributes here.
     output_buffer: Vec<u8>,
