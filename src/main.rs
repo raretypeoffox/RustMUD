@@ -96,6 +96,7 @@ fn main() -> io::Result<()> {
 
 
         // Update game state
+        // update_game_start()
 
         // Sleep a bit to prevent 100% CPU usage loop
         std::thread::sleep(Duration::from_millis(10));
