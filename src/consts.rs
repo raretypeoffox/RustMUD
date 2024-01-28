@@ -1,4 +1,6 @@
 
+#![allow(dead_code)]
+
 pub mod constants {
 
 pub const GREETING: &'static str = r#"
@@ -66,7 +68,7 @@ pub const GREETING: &'static str = r#"
     pub enum Conn {
       Playing,
       GetName,
-      GetOldPassword,
+      GetPassword,
       ConfirmNewName,
       GetNewPassword,
       ConfirmNewPassword,
