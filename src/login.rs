@@ -1,7 +1,7 @@
 
 #![allow(dead_code)]
 
-use super::PlayerManager;
+use super::{PlayerManager, Player};
 use super::db::UserDatabase;
 
 use super::consts::constants::*;
@@ -34,22 +34,39 @@ pub fn process_player_login(player_manager: &mut PlayerManager, player_id: usize
             // Store the new user in the users HashMap
             database.add_user(&player.character_name, &password)?;
     
-            player.connection_status = Conn::Playing;
-            player.append_to_output_buffer("Welcome!\n".to_string());
+            player.connection_status = Conn::GetNewSex;
+            player.append_to_output_buffer("Please choose your sex [M/F/N]\n".to_string());
         } else {
+            // shouldn't be reached
             player.append_to_output_buffer("Username already taken. Please choose a different one:\n".to_string());
         }
     } else if player.connection_status == Conn::GetPassword {
-            let password = input.trim().to_string();
-    
-            if database.check_password(&player.character_name, &password)? {
-                player.connection_status = Conn::Playing;
-                player.append_to_output_buffer("Welcome back!\n".to_string());
-            } else {
-                player.append_to_output_buffer("Invalid password. Please try again:\n".to_string());
-            }
+        let password = input.trim().to_string();
+
+        if database.check_password(&player.character_name, &password)? {
+            player.connection_status = Conn::Playing;
+            player.append_to_output_buffer("Welcome back!\n".to_string());
+        } else {
+            player.append_to_output_buffer("Invalid password. Please try again:\n".to_string());
+        }
+    } else if player.connection_status == Conn::GetNewSex {
+        let input = input.trim().to_string().to_lowercase();
+
+        fn set_sex(player: &mut Player, sex: Sex) {
+            player.sex = sex;
+            player.connection_status = Conn::GetNewRace;
+            player.append_to_output_buffer(RACE_MSG.to_string());
+        }
+        
+
+        match input.as_str() {
+            "m" => set_sex(player, Sex::Male),
+            "f" => set_sex(player, Sex::Female),
+            "n" => set_sex(player, Sex::Neutral),
+            _ => player.append_to_output_buffer("Invalid input. Please choose your sex [M/F/N]\n".to_string()),
         }
 
+    }
 
     Ok(())
 }

@@ -12,7 +12,7 @@ mod db;
 
 use handler::process_player_input;
 use login::process_player_login; 
-use consts::constants::{Conn, Race, Origin, GREETING}; 
+use consts::constants::{Conn, Sex, Race, Origin, GREETING}; 
 
 
 fn main() -> io::Result<()> {
@@ -123,6 +123,7 @@ struct Player {
     connection_status: Conn,
 
     character_name: String,
+    sex: Sex,
     race: Race,
     origin: Origin,
 }
@@ -162,7 +163,7 @@ impl PlayerManager {
         let id = self.unique_id_counter;
         self.unique_id_counter += 1;
     
-        let mut player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new(), connection_status: Conn::GetName, character_name: String::new(), race: Race::None, origin: Origin::None};
+        let mut player = Player {addr: addr, stream: stream, input_buffer: Vec::new(), output_buffer: Vec::new(), connection_status: Conn::GetName, character_name: String::new(), sex: Sex::None, race: Race::None, origin: Origin::None};
     
         // Append the greeting message to the output buffer
         let greeting_message = format!("{}\nWhat is your name?\n", GREETING);

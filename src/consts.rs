@@ -51,6 +51,29 @@ pub const GREETING: &'static str = r#"
                                **** Based on RustMUD by Vagonuth ****
 "#;
 
+pub const RACE_MSG: &'static str = r#"
+Please choose from one of the following races:
+
+[Cragkin]     Stone-skinned humanoids from mountainous regions, known for their
+              incredible strength and ability to merge with rock and earth.
+
+[Moonshades]  Nocturnal beings with a strong affinity to moonlight. They have
+              enhanced night vision, silent movement and a knack for archery.
+
+[Etherials]   Ghost-like beings that exist partially in another dimension, making them
+              intangible and difficult to harm. They excel at hiding in the shadows.
+              
+[Starfolk]    Mysterious beings that come from the night sky, 
+              their bodies resembling the starry heavens, with abilities tied to the cosmos.
+
+[Frostlings]  Icy beings from the coldest parts of the world,
+              capable of withstanding extreme cold and manipulating ice and snow.
+
+[Aurorans]    Beings of pure light, they are the embodiment of goodness and purity,
+              and are capable of great feats of healing and protection.
+
+"#;
+
 
 
     // pub const CON_PLAYING: u8 = 0;
@@ -73,12 +96,20 @@ pub const GREETING: &'static str = r#"
       GetNewPassword,
       ConfirmNewPassword,
       GetNewSex,
-      GetNewClass,
+      GetNewRace,
       GetNewOrigins,
       ReadMotd,
     }
 
-    #[derive(PartialEq)]
+    #[derive(PartialEq, Copy, Clone)]      
+    pub enum Sex {
+      None,
+      Male,
+      Female,
+      Neutral,
+    }
+
+    #[derive(PartialEq, Copy, Clone)]      
     pub enum Race {
       None,
       Cragkin,
@@ -89,7 +120,7 @@ pub const GREETING: &'static str = r#"
       Auroran,
     }
 
-    #[derive(PartialEq)]
+    #[derive(PartialEq, Copy, Clone)]      
     pub enum Origin {
       None,
       WarriorOfTheForgottenLegion,
