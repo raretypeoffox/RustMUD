@@ -23,7 +23,7 @@ struct Game {
     area_manager: AreaManager,
     room_manager: RoomManager,
     mob_manager: MobManager,
-    // obj_manager: ObjManager,
+    object_manager: ObjectManager,
     // reset_manager: ResetManager,
     // shop_manager: ShopManager,
     // special_manager: SpecialManager,
@@ -112,6 +112,71 @@ impl MobManager {
         self.mobs.values().collect()
     }
 }
+
+pub struct ObjectManager {
+    objects: HashMap<u16, ObjectTemplate>,
+}
+
+impl ObjectManager {
+    pub fn new() -> Self {
+        Self {
+            objects: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, id: u16, object: ObjectTemplate) {
+        self.objects.insert(id, object);
+    }
+
+    pub fn get(&self, id: u16) -> Option<&ObjectTemplate> {
+        self.objects.get(&id)
+    }
+
+    pub fn get_all(&self) -> Vec<&ObjectTemplate> {
+        self.objects.values().collect()
+    }
+}
+
+pub struct ObjectTemplate {
+    vnum: u16,
+    keywords: String,
+    short_desc: String,
+    long_desc: String,
+    action_desc: String,
+    item_type: u32,
+    extra_flags: u32,
+    wear_flags: u32,
+    value_0: u32,
+    value_1: u32,
+    value_2: u32,
+    value_3: u32,
+    weight: u16,
+    cost: i32,
+    max_hitpoints: i32,
+}
+
+impl ObjectTemplate {
+    pub fn new(vnum: u16, keywords: String, short_desc: String, long_desc: String, action_desc: String, item_type: u32, extra_flags: u32, wear_flags: u32, value_0: u32, value_1: u32, value_2: u32, value_3: u32, weight: u16, cost: i32) -> Self {
+        Self {
+            vnum,
+            keywords,
+            short_desc,
+            long_desc,
+            action_desc,
+            item_type,
+            extra_flags,
+            wear_flags,
+            value_0,
+            value_1,
+            value_2,
+            value_3,
+            weight,
+            cost,
+            max_hitpoints: 100,
+        }
+    }
+}
+
 
 struct Room {
     vnum: u16,
@@ -357,6 +422,69 @@ fn parse_mob(game: &mut Game, lines: &mut Vec<String>) {
     game.mob_manager.add(mob_vnum, current_mob);
 }
 
+fn parse_object(game: &mut Game, lines: &mut Vec<String>) {
+    let obj_vnum: u16 = lines.remove(0)[1..].parse().expect("Error parsing object vnum");
+    let mut offset = 0;
+
+    let (keywords, offset_add) = match parse_multi_line(&lines[offset..]) {
+        Ok(result) => result,
+        Err(_) => {
+            eprintln!("Error parsing multi line");
+            return;
+        }
+    };
+    let keywords = keywords.to_lowercase();
+    offset += offset_add;
+
+    let (short_desc, offset_add) = match parse_multi_line(&lines[offset..]) {
+        Ok(result) => result,
+        Err(_) => {
+            eprintln!("Error parsing multi line");
+            return;
+        }
+    };
+    offset += offset_add;
+
+    let (long_desc, offset_add) = match parse_multi_line(&lines[offset..]) {
+        Ok(result) => result,
+        Err(_) => {
+            eprintln!("Error parsing multi line");
+            return;
+        }
+    };
+    offset += offset_add;
+
+    let (action_desc, offset_add) = match parse_multi_line(&lines[offset..]) {
+        Ok(result) => result,
+        Err(_) => {
+            eprintln!("Error parsing multi line");
+            return;
+        }
+    };
+    offset += offset_add;
+
+    let parts: Vec<&str> = lines[offset].split_whitespace().collect();
+    let item_type = parts[0].parse().expect("Error parsing item type");
+    let extra_flags = parse_flags(parts[1]).expect("Error parsing extra flags");
+    let wear_flags = parse_flags(parts[2]).expect("Error parsing wear flags");
+    offset += 1;
+
+    let parts: Vec<&str> = lines[offset].split_whitespace().collect();
+    let value_0 = parse_flags(parts[0]).expect("Error parsing value 0");
+    let value_1 = parse_flags(parts[1]).expect("Error parsing value 1");
+    let value_2 = parse_flags(parts[2]).expect("Error parsing value 2");
+    let value_3 = parse_flags(parts[3]).expect("Error parsing value 3");
+    offset += 1;
+
+    let parts: Vec<&str> = lines[offset].split_whitespace().collect();
+    let weight = parts[0].parse().expect("Error parsing weight");
+    let cost = parts[1].parse().expect("Error parsing cost");
+
+
+    let current_object = ObjectTemplate::new(obj_vnum, keywords, short_desc, long_desc, action_desc, item_type, extra_flags, wear_flags, value_0, value_1, value_2, value_3, weight, cost);
+
+    game.object_manager.add(obj_vnum, current_object);
+}
 
 fn parse_room(game: &mut Game, lines: &mut Vec<String>) {
 
@@ -587,8 +715,21 @@ fn parse_are_file(game: &mut Game, filename: &str) -> io::Result<()> {
                 }
             }
             State::Objects => {
-                // Parse objects
-                state = State::None;
+                if line == "#0" {
+                    if !lines.is_empty() {
+                        parse_object(game, &mut lines);  // Parse the last room
+                    }
+                    lines.clear();
+                    state = State::None;
+                } else if line.starts_with('#') {
+                    if !lines.is_empty() {
+                        parse_object(game, &mut lines);  // Parse the current room
+                        lines.clear();  // Clear the vector for the next room
+                    }
+                    lines.push(line.to_string());  // Start collecting lines for the next room
+                } else {
+                    lines.push(line.to_string());  // Continue collecting lines for the current room
+                }
             }
             State::Rooms => {
                 if line == "#0" {
