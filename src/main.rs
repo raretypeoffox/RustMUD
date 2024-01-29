@@ -10,6 +10,7 @@ mod consts;
 mod login;
 mod db;
 mod player;
+mod world;
 
 use handler::process_player_input;
 use login::process_player_login; 
