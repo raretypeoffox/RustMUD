@@ -177,6 +177,139 @@ impl ObjectTemplate {
     }
 }
 
+pub struct ResetManager {
+    mob_resets: Vec<ResetMob>,
+    object_resets: Vec<ResetObject>,
+    // door_resets: Vec<ResetDoor>,
+    // randomize_doors_resets: Vec<ResetRandomizeDoors>,
+    mob_repop_queue: HashSet<ResetMob>,
+    obj_repop_queue: HashSet<ResetObject>,
+}
+
+
+impl ResetManager {
+    pub fn new() -> Self {
+        Self {
+            mob_resets: Vec::new(),
+            object_resets: Vec::new(),
+            // door_resets: Vec::new(),
+            // randomize_doors_resets: Vec::new(),
+            mob_repop_queue: HashSet::new(),
+            obj_repop_queue: HashSet::new(),
+        }
+    }
+
+    pub fn add_mob_reset(&mut self, reset_mob: ResetMob) {
+        self.mob_resets.push(reset_mob);
+    }
+
+    pub fn add_object_reset(&mut self, reset_object: ResetObject) {
+        self.object_resets.push(reset_object);
+    }
+
+    pub fn add_to_mob_repop_queue(&mut self, mob_reset: ResetMob) {
+        self.mob_repop_queue.insert(mob_reset);
+    }
+
+    pub fn add_to_obj_repop_queue(&mut self, obj_reset: ResetObject) {
+        self.obj_repop_queue.insert(obj_reset);
+    }
+
+    pub fn process_mob_repop_queue(&mut self) -> bool {
+        if self.mob_repop_queue.is_empty() {
+            return false;
+        }
+        // while let Some(mob_reset) = self.mob_repop_queue.take() {
+        //     // let mob_template = mob_manager.get(mob_reset.mob_vnum);
+        //     // let room = room_manager.get(mob_reset.room_vnum);
+        //     // MobInstance(mob_template, mob_reset, room);
+            
+        //     // todo
+        //     // for item in mob_reset.inventory:
+        //     //     mob.add_item(item)
+        //     // mob.mob_reset = mob_reset
+        //     // mob_reset.equipment = Equipment()
+        //     // for item in mob_reset.equipment:
+        //     //     mob_reset.equipment.equip(item)
+        //     // mob_reset.inventory = []
+        //     // mob_reset.comment = ""
+        // }
+        true
+    }
+
+    pub fn process_obj_repop_queue(&mut self) -> bool {
+        if self.mob_repop_queue.is_empty() && self.obj_repop_queue.is_empty() {
+            return false;
+        }
+        // while let Some(obj_reset) = self.obj_repop_queue.take() {
+        //     // ObjectInstance(object_manager.get(obj_reset.obj_vnum), obj_reset)
+        //     // todo
+        //     // code for objects within containers
+        // }
+        true
+    }
+
+    pub fn process_repop_queue(&mut self) -> bool {
+        self.process_mob_repop_queue();
+        self.process_obj_repop_queue()
+    }
+
+}
+
+#[derive(Eq, PartialEq, Hash)]
+pub struct ResetMob {
+    mob_vnum: u16,
+    max_count: u16,
+    room_vnum: u16,
+    comment: String,
+    // equipment: Equipment,
+    // inventory: Inventory,
+}
+
+impl ResetMob {
+    pub fn new(mob_vnum: u16, max_count: u16, room_vnum: u16, comment: String) -> Self {
+        Self {
+            mob_vnum,
+            max_count,
+            room_vnum,
+            comment,
+            // equipment: Equipment::new(),
+            // inventory: Inventory::new(),
+        }
+    }
+
+    // pub fn add_item(&mut self, item: u16) {
+    //     self.inventory.add_item(item);
+    // }
+}
+
+#[derive(Eq, PartialEq, Hash)]
+enum ObjLocationType {
+    Player,
+    Room,
+    Mob,
+    PcContainer,
+    OtherContainer,
+}
+
+#[derive(Eq, PartialEq, Hash)]
+pub struct ResetObject {
+    obj_vnum: u16,
+    location_vnum: u16,
+    location_type: ObjLocationType,
+}
+
+impl ResetObject {
+    pub fn new(obj_vnum: u16, location_vnum: u16, location_type: ObjLocationType) -> Self {
+        Self {
+            obj_vnum,
+            location_vnum,
+            location_type,
+        }
+    }
+}
+
+
 
 struct Room {
     vnum: u16,
@@ -480,7 +613,6 @@ fn parse_object(game: &mut Game, lines: &mut Vec<String>) {
     let weight = parts[0].parse().expect("Error parsing weight");
     let cost = parts[1].parse().expect("Error parsing cost");
 
-
     let current_object = ObjectTemplate::new(obj_vnum, keywords, short_desc, long_desc, action_desc, item_type, extra_flags, wear_flags, value_0, value_1, value_2, value_3, weight, cost);
 
     game.object_manager.add(obj_vnum, current_object);
@@ -768,3 +900,218 @@ fn parse_are_file(game: &mut Game, filename: &str) -> io::Result<()> {
 
     Ok(())
 }
+
+fn main() {
+    let mut game = Game {
+        area_manager: AreaManager::new(),
+        room_manager: RoomManager::new(),
+        mob_manager: MobManager::new(),
+        object_manager: ObjectManager::new(),
+    };
+
+    parse_are_file(&mut game, "beach.are").expect("Failed to parse area file");
+
+
+    // write me code that iterates over the rooms and prints out the room name and description
+    // for room in game.room_manager.get_all() {
+    //     println!("Room: {} {}", room.vnum, room.name);
+    //     println!("Description: {}", room.description);
+    //     println!("Area Number: {}", room.area_number);
+    //     println!("Room Flags: {}", room.room_flags);
+    //     println!("Sector Type: {}", room.sector_type);
+    //     println!("Doors: ");
+    //     for door in &room.door_list {
+    //         println!("Door: {} {}", door.door_number, door.description);
+    //         println!("Keywords: {}", door.keywords);
+    //         println!("Locks: {}", door.locks);
+    //         println!("Key: {}", door.key);
+    //         println!("To Room: {}", door.to_room);
+    //     }
+    //     println!("Extended Descriptions: ");
+    //     for desc in &room.extended_descriptions_list {
+    //         println!("Keywords: {}", desc.keywords);
+    //         println!("Description: {}", desc.description);
+    //     }
+    //     println!("\n\n");
+    // }
+
+    // for mob in game.mob_manager.get_all() {
+    //     println!("Mob Vnum: {}", mob.vnum);
+    //     println!("Keywords: {}", mob.keywords);
+    //     println!("Short Description: {}", mob.short_desc);
+    //     println!("Long Description: {}", mob.long_desc);
+    //     println!("Act Flags: {}", mob.act_flags);
+    //     println!("Affected By: {}", mob.aff_flags);
+    //     println!("Alignment: {}", mob.align);
+    //     println!("Level: {}", mob.level);
+    //     println!("Hitroll: {}", mob.hitroll);
+    //     println!("AC: {}", mob.ac);
+    //     println!("Hit Dice: {}d{}+{}", mob.hitdice_num, mob.hitdice_size, mob.hitdice_bonus);
+    //     println!("Damage Dice: {}d{}+{}", mob.damdice_num, mob.damdice_size, mob.damdice_bonus);
+    //     println!("Gold: {}", mob.gold);
+    //     println!("Experience: {}", mob.xp);
+    //     println!("Sex: {}", mob.sex);
+    //     println!("\n\n");
+    // }
+    for object in game.object_manager.get_all() {
+        println!("Object Vnum: {}", object.vnum);
+        println!("Keywords: {}", object.keywords);
+        println!("Short Description: {}", object.short_desc);
+        println!("Long Description: {}", object.long_desc);
+        println!("Action Description: {}", object.action_desc);
+        println!("Item Type: {}", object.item_type);
+        println!("Extra Flags: {}", object.extra_flags);
+        println!("Wear Flags: {}", object.wear_flags);
+        println!("Value 0: {}", object.value_0);
+        println!("Value 1: {}", object.value_1);
+        println!("Value 2: {}", object.value_2);
+        println!("Value 3: {}", object.value_3);
+        println!("Weight: {}", object.weight);
+        println!("Cost: {}", object.cost);
+        println!("\n\n");
+    }
+
+}
+
+
+
+
+// def parse_are_file(filename):
+//     with open(filename) as f:
+//         lines = f.readlines()
+        
+//     lines = [line.strip() for line in lines]
+//     lines = [line for line in lines if line]
+
+//     STATE = None
+//     line_index = 0
+
+//     while line_index < len(lines):
+//         if STATE == None:      
+//             if lines[line_index].startswith('#'):
+//                 STATE = lines[line_index][1:].split()[0]
+//                 line_index += 1
+//             else:
+//                 print("Not expected: ", lines[line_index])
+//                 line_index += 1
+//         elif STATE == "AREA":
+//             Area = lines[line_index-1].replace('#AREA', '').strip()[:-1]
+//             print("\tArea: ", Area)
+//             STATE = None
+//         elif STATE == "HELPS":
+//             while lines[line_index].startswith('0 $~') == False:
+//                 line_index += 1
+//             line_index += 1
+//             STATE = None
+//         elif STATE in ["MOBILES", "OBJECTS", "ROOMS"]:
+//             if lines[line_index].startswith('#'):
+//                 if lines[line_index].startswith('#0'):
+//                     STATE = None
+//                     line_index += 1 
+//                 else:
+//                     offset = 1
+//                     while lines[line_index+offset].startswith('#') == False:
+//                         offset += 1
+//                     parse_func = parse_mob if STATE == "MOBILES" else parse_object if STATE == "OBJECTS" else parse_room
+//                     parse_func(lines[line_index:line_index+offset])
+//                     line_index += offset
+//         elif STATE == "RESETS":
+//             # Resets pass the all section as a block on input to parse_reset
+//             offset = 0
+//             while lines[line_index+offset].startswith('S') == False:
+//                 offset += 1
+//             parse_reset(lines[line_index:line_index+offset])
+//             line_index += offset + 1
+//             STATE = None
+//         elif STATE in ["SHOPS", "SPECIALS"]:
+//             # Shops and specials passes line by line to parse function
+//             if lines[line_index].startswith('S') or lines[line_index] == 0:
+//                 STATE = None
+//                 line_index += 1
+//             else:
+//                 parse_func = parse_shops if STATE == "SHOPS" else parse_specials
+//                 parse_func(lines[line_index])
+//                 line_index += 1  
+//         elif STATE == "$":
+//             return
+
+
+// class Room:
+//     def __init__(self, vnum):
+//         self.vnum = vnum
+//         self.name = ""
+//         self.description = ""
+//         self.area_number = 0
+//         self.room_flags = 0
+//         self.sector_type = 0
+        
+//         self.doors = {}
+//         self.extended_descriptions = []
+    
+//         self.mob_list = set()
+//         self.object_list = set()
+//         self.player_list = set()
+//         self.door_list = set()
+//         self.extended_descriptions_list = set()
+
+//     def add_door(self, door_number, door_description, keywords, locks, key, to_room):
+//         self.doors[door_number] = {
+//             "description": door_description,
+//             "keywords": keywords,
+//             "locks": locks,
+//             "key": key,
+//             "to_room": to_room
+//         }
+//         self.door_list.add(Door(door_number, door_description, keywords, locks, key, to_room))
+
+//     def add_extended_description(self, keywords, description):
+//         self.extended_descriptions.append({
+//             "keywords": keywords,
+//             "description": description
+//         })
+//         self.extended_descriptions_list.add(ExtendedDescription(keywords, description))
+
+
+// class Door:
+//     def __init__(self, door_number, door_description, keywords, locks, key, to_room):
+//         self.door_number = door_number
+//         self.description = door_description
+//         self.keywords = keywords
+//         self.locks = locks
+//         self.key = key
+//         self.to_room = to_room
+        
+//     def get_keywords(self):
+//         return self.keywords.split()
+    
+//     def get_description(self):
+//         return self.description
+
+// class ExtendedDescription:
+//     def __init__(self, keywords, description):
+//         self.keywords = keywords
+//         self.description = description
+        
+//     def get_keywords(self):
+//         return self.keywords.split()
+    
+//     def get_description(self):
+//         return self.description 
+
+// class RoomManager:
+//     def __init__(self):
+//         self.items = {}
+        
+//     def add(self, id, item):
+//         self.items[id] = item
+    
+//     def get(self, id):
+//         return self.items.get(id)
+    
+//     def remove(self, id):
+//         if id in self.items:
+//             del self.items[id]
+            
+//     def get_all(self):
+//         return self.items.values()
+
