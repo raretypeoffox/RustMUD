@@ -284,7 +284,7 @@ impl ResetMob {
 }
 
 #[derive(Eq, PartialEq, Hash)]
-enum ObjLocationType {
+pub enum ObjLocationType {
     Player,
     Room,
     Mob,

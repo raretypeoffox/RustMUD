@@ -6,6 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rusqlite = "0.24.2"
+rusqlite = { version = "0.24.2", features = ["bundled"] }
 bcrypt = "0.9.0"
 regex = "1"
